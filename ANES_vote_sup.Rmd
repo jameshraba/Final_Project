@@ -1,0 +1,46 @@
+---
+title: "ANES Vote Sup"
+author: "James P. Hraba"
+date: "1/8/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(haven)
+path <- here("data", "anes_timeseries_cdf.dta" ) #setting path
+
+
+path2 <- here("data", "anes_timeseries_2016.dta")
+anes_16 <- read_dta(path2)
+
+anes <- read_dta(path) # reading in data, requires haven
+
+```
+
+```{r}
+# filter to Reps and Dems, dropping out Ind
+anes_RD <- anes %>%
+  filter(anes$VCF0303 == 1 | anes$VCF0303 == 3)
+
+
+# out-party feeling therm variable
+anes_RD$out_therm <- NA
+
+#D feeling therm for R's
+anes_RD$out_therm[anes_RD$VCF0303 == 1] <-  anes_RD$VCF0224[anes_RD$VCF0303 == 1] 
+
+#D feeling therm for R's
+anes_RD$out_therm[anes_RD$VCF0303 == 3] <-  anes_RD$VCF0218[anes_RD$VCF0303 == 3] 
+
+```
+
+```{r}
+
+```
+
