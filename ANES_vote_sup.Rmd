@@ -1,0 +1,68 @@
+---
+title: "ANES Vote Sup"
+author: "James P. Hraba"
+date: "1/10/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(haven)
+
+
+path2 <- here("data", "anes_timeseries_2016.dta")
+anes_16 <- read_dta(path2)
+
+path3 <- here("data", "statelaws.csv")
+slaw <- read.csv(path3)
+
+
+```
+
+```{r}
+# filter to Reps and Dems, dropping out Ind
+anes_RD <- anes %>%
+  filter(anes$VCF0303 == 1 | anes$VCF0303 == 3)
+
+
+# out-party feeling therm variable
+anes_RD$out_therm <- NA
+
+#D feeling therm for R's
+anes_RD$out_therm[anes_RD$VCF0303 == 1] <-  anes_RD$VCF0224[anes_RD$VCF0303 == 1] 
+
+#D feeling therm for R's
+anes_RD$out_therm[anes_RD$VCF0303 == 3] <-  anes_RD$VCF0218[anes_RD$VCF0303 == 3] 
+
+```
+
+```{r}
+
+# we want: V161003 How often does R pay attn to politics and elections? 1 always - 5 never.
+# V161009 Attn to news on any media 1. a great deal - 5 none at all
+# V161010d state code for address
+# V161010e state abv for address
+# v161011 Is R registered to vote (1. Reg at this address, 2 reg at diff add, 3 not reg, -8 dont know, -9 refused)
+# V161019 party reg. what political party are you registered with, if any? 1 dem, 2 rep, 4 non or ind, 5 other specify, -8 dont know, -9 refused
+# V161020 Does R intend to reg to vote
+
+#V161039 does R intend to vote for US house
+# V161010e
+
+sup16 <- anes_16 %>% select(V160001, V161003, V161009, V161010d,V161010e, V161011, V161014, V161015e, V161019, V161020, V161026, V161027, V161028, V161030, V161031, V161032, V161036, V161039, V161046, V161049, V161147, V161055, V161156, V161058, V161061, V161136, V161267, V161267x, V161310x, V162031, V162031x, V162034, V162034a, V162046)
+
+
+ggplot(anes_16, mapping = aes(intend.house, V161010e)) + 
+  geom_count()
+  
+```
+
+```{r}
+mosaicplot(table(anes_16$intend.house, anes_16$V161010e))
+```
+
