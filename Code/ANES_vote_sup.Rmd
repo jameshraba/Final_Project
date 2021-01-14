@@ -16,88 +16,127 @@ library(haven)
 library(ggplot2)
 
 #rm(list = ls())
-#path2 <- here("data", "anes_timeseries_2016.dta")
-#anes_16 <- read_dta(path2)
 
-#path3 <- here("data", "statelaws.csv")
-#slaw <- read.csv(path3)
+```
 
-#path_final <- here("data", "anes16_with_laws.csv")
-#anes <- read.csv(path_final)
 
-#head(anes)
 
-#anes.1 <- as_tibble(anes)
+```{r}
+#loading in data
+path <- here("data", "anes_voting_law_data_statePolLean.csv")
+anes_voting_law_data_statePolLean <- read.csv(path)
 
-#rename(anes, case_id = V160001, weight_fullsamp = V160101, stratum_fullsamp = V160201, varPSU_fullsamp = V160202, attn_pol = V161003, attn_news = V161009, fips = V161010d, state = V161010e)
-  
+path2 <- here("data", "anes16_with_laws.csv")
+anes16_with_laws <- read.csv(path2)
+
+path3 <- here("data", "anes_voting_law_data_with_pol_variables.csv")
+anes16_new <- read.csv(path3)
+
+```
+
+
+
+```{r}
+#combining datasets
+anes <- cbind(anes16_new, intent_vote = anes16_with_laws$V161030,
+              intent_vote_reg = anes16_with_laws$V161024x)
+
+
+#renaming variables
+anes <- rename(anes, id_law = Check..Photo.ID.vs..No.Photo,
+               alt_party = Party.Alignment,
+               poverty = Poverty..Over.Under,
+               pol_lean = Political.Leaning,
+               case_id = V160001...2016.Case.ID,
+               state = V161010e...State,
+               party_reg = V161019...Party.of.Registration,
+               therm_dem = V161086...FT.Dem.Cand,
+               therm_rep = V161087...FT.Rep.Cand,
+               party_strength = V161156...Strong.Party.Affiliation,
+               race = V161310....calc..Race...All,
+               income = V161361x...Pre.Income,
+               gender = V165723...Gender,
+               age = V168254..Age..observed.)
 
 ```
 
 ```{r}
+# 1 = Alternate Party, 0 = Primary Party, NA = Party Not Known
+anes$alt_party <- recode(anes$alt_party,
+                         'Alternate Party' = 1,
+                         'Primary Party' = 0)
 
-panth_final <- here("data", "anes_voting_law_data_statePolLean")
-anes <- read.csv(panth_final)
+
+# 1 = Democratic, 0 = Republican
+anes$pol_lean <- recode(anes$pol_lean, 
+                        "Democratic" = 1,
+                        "Republican" = 0)
+
+
+# 1 = Under Poverty Line, 0 = Over Poverty Line
+anes$poverty <- recode(anes$poverty,
+                       "Under Poverty Line" = 1,
+                       "Over Poverty Line" = 0)
+
+# NA = -1: Missing
+anes$party_reg <- na_if(anes$party_reg, "-1:Missing")
+
+
+
+# 0 = American Indian/Alaskan Native
+# 1 = Asian
+# 2 = Black/African American
+# 3 = Native Hawaiin/Pacific Islander
+# 4 = Other Race
+# 5 = White
+anes$race <- recode(anes$race, 
+                    "American Indian/Alaskan Native" = 0,
+                   "Asian" = 1,
+                    "Black/African American" = 2,
+                    "Native Hawaiin/Pacific Islander" = 3,
+                    "Other Race" = 4,
+                    "White" = 5
+                    )
+
+
+# 1 = 1:Male, 0 = 2:Female
+anes$gender <- recode(anes$gender,
+                      "1: Male" = 1,
+                      "2: Female" = 0)
+
+anes$age <- na_if(anes$age, 
+                  "-1:Missing")
+
+anes$id_law <- factor(anes$id_law)
+
+# recoding the DV, Counting R's that are not registered to vote/ does not intend to register as a NO(2) for intent_vote
+anes$intent_vote[anes$intent_vote_reg == 1] <-  0
+
+# recoding the DV, Counting R's that registered and voted early as a YES(1) for intent_vote
+anes$intent_vote[anes$intent_vote_reg == 4] <-  1 
+
+anes$intent_vote <- recode(anes$intent_vote, "2" = 0)
+
+anes$intent_vote <- na_if(anes$intent_vote, "-8")
+anes$intent_vote <- na_if(anes$intent_vote, "-9")
+anes_noNA <- na.omit(anes)
+
 ```
+
+
 
 
 ```{r}
-# filter to Reps and Dems, dropping out Ind
-anes_RD <- anes %>%
-  filter(anes$VCF0303 == 1 | anes$VCF0303 == 3)
+glm_new <- glm(intent_vote ~ id_law + pol_lean + alt_party + poverty,  family = "binomial", data = anes_noNA) 
 
 
-# out-party feeling therm variable
-anes_RD$out_therm <- NA
+summary(glm_new)
 
-#D feeling therm for R's
-anes_RD$out_therm[anes_RD$VCF0303 == 1] <-  anes_RD$VCF0224[anes_RD$VCF0303 == 1] 
+xtabs(~intent_vote + id_law, data = anes)
 
-#D feeling therm for R's
-anes_RD$out_therm[anes_RD$VCF0303 == 3] <-  anes_RD$VCF0218[anes_RD$VCF0303 == 3] 
-
+ggplot(anes, aes(id_law, intent_vote, color = alt_party)) +
+  geom_jitter()
 ```
+for every one unit change in 
 
-```{r}
-
-# we want: V161003 How often does R pay attn to politics and elections? 1 always - 5 never.
-# V161009 Attn to news on any media 1. a great deal - 5 none at all
-# V161010d state code for address
-# V161010e state abv for address
-# v161011 Is R registered to vote (1. Reg at this address, 2 reg at diff add, 3 not reg, -8 dont know, -9 refused)
-# V161019 party reg. what political party are you registered with, if any? 1 dem, 2 rep, 4 non or ind, 5 other specify, -8 dont know, -9 refused
-# V161020 Does R intend to reg to vote
-
-#V161039 does R intend to vote for US house
-# V161010e
-
-sup16 <- anes_16 %>% select(V160001, V161003, V161009, V161010d,V161010e, V161011, V161014, V161015e, V161019, V161020, V161026, V161027, V161028, V161030, V161031, V161032, V161036, V161039, V161046, V161049, V161147, V161055, V161156, V161058, V161061, V161136, V161267, V161267x, V161310x, V162031, V162031x, V162034, V162034a, V162046)
-
-
-ggplot(anes_16, mapping = aes(intend.house, V161010e)) + 
-  geom_count()
-  
-```
-
-```{r}
-mosaicplot(table(anes_16$intend.house, anes_16$V161010e))
-```
-
-```{r}
-anes <- cbind(anes_voting_law_data_statePolLean, intent_vote = anes16_with_laws$V161030)
-head(anes)
-
-anes <- rename(anes, id_law = Check..Photo.ID.vs..No.Photo, pol_lean = Political.Leaning, case_id = V160001...2016.Case.ID, state = V161010e...State, party_reg = V161019...Party.of.Registration, therm_dem = V161086...FT.Dem.Cand, therm_rep = V161087...FT.Rep.Cand, party_strength = V161156...Strong.Party.Affiliation, race = V161310....calc..Race...All, income = V161361x...Pre.Income, gender = V165723...Gender, age = V168254..Age..observed.)
-
-
-glm_new <- glm(intent_vote ~ id_law + pol_lean + state + party_reg + race + income + gender + age, data = anes)
-
-glm_new
-```
-
-```{r}
-logit_gen <- glm(V161030 ~ . , data = anes)
-logit_gen
-
-```
 
