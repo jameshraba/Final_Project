@@ -1,8 +1,12 @@
 ---
-title: "ANES Vote Sup"
-author: "James P. Hraba"
-date: "1/10/2021"
-output: pdf_document
+title: 'State Electorate Law: Testing Voter Deterrence'
+author: "James, Jethro, Rebecca, & Tyler"
+date: "1/14/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -14,11 +18,36 @@ library(tidyverse)
 library(here)
 library(haven)
 library(ggplot2)
-
-#rm(list = ls())
-
+library(jtools)
+library(huxtable)
+library(sandwich)
+library(flextable)
 ```
 
+
+## Data  
+This study uses three different data sets. The primary dataset is from American National Election Studies (ANES) is the **2016 Time Series Study**, which examines electoral participation and voting behavior in relation to personality traits and demographic data (2016 Time Series Study, 2019). This dataset was updated in September 2019 and includes self-identified and interviewer-identified demographic data such as age, income, race, and geographic information. The study includes self-identified and some state captured data such as voting intent, registration status, party of registration, sentiment regarding candidates at levels from president to state-level candidates.  
+
+The second dataset, **Non-Precinct Voting in the States: An Extensive Dataset of State Laws and Related Resources**, contains voter law data by state by year, ranging from 1972 through 2018. The data through 2012 was collected by law students supervised by Dan Tokaji, Ohio State University. After 2012, the data was collected under supervision by Jan Leighley, American University, who continues to supervise on-going data collection, validation, and updating. The data used in this study is from 2016 and consists of variables including IDs requirements for absentee, early, and day of voting. The original dataset including data from 1972-2008 can be found at the Pew Charitable Trust (Non-Precinct Place, 2010). The focus of this study centered on ID requirements by state.  
+
+The third dataset was collated by our group based on data from the **Federal Election Commission**. The data used in this study is from the Presidential election years 2004, 2008, 2012, and includes only the electoral outcome for each state used to identify whether the state’s ‘political leaning’ is Democratic or Republican. The method we used to determine the political leaning was simple majority of the previous three years’ elections (the ‘leaning’ was selected as the party that was elected by the state in at least two of the elections from the years 2004, 2008, and 2012).  
+
+
+
+## Cleaning and Analysis Caveats  
+The primary focus of the data is on state level view of individual voter responses, state level voter ID laws and state historical ‘political leaning’. Data from all three datasets was merged on the state variables.  
+
+**Intent to Vote:** Using variable *V161030*, some respondents had already voted, so we combined the early voters with the ‘Yes’ responses, in assumption that an early voter is also someone who 'intended to vote’. Similarly, those who responded to V161024x as not intending to register to vote were included in the ‘No’ response that they did not intend to vote.  
+
+**Income (Poverty Level):** the national poverty level for 2016 was *$24,563* for a family of four (Poverty Thresholds, 2020). We chose to use the over/under for poverty level as an indicator, thus we grouped income level under *$25,000* as ‘Under Poverty Line’ versus every value equal to and over *$25,000* as ‘Over Poverty Line’. The poverty threshold from 2016 was identified by the US Census Bureau (Poverty Thresholds, 2020).  
+
+**Political Leaning (by state):** In determining state political leaning we chose to use data from the three most recent presidential elections to account for recent leaning of the state although data suggests that since 1992, most states have stayed aligned with the party chosen in 1992, with only a small number of flips through the years. Eighteen states flipped from red to blue beginning in 1992 (no states have flipped from blue to red as a trend (since the 1972 election), though there are single year voting exceptions). Thus, to understand the recent leaning of the state, we opted to use only the most recent three elections to identify the leaning of the state, especially given the 2016 election, in which four states voted Republican even though their long term trend was to vote Democratic.  
+
+**Alternative Party identification:** After determining the Political Leaning of the state, we compared the respondent’s party of record to the political leaning and if the two matched, the respondent was coded as being affiliated with the *Primary Party*. If the two did not match, the respondent was coded ‘Alternative Party’. Some states do not track *registered party*; those respondents’ data were dropped from the analysis.  
+
+**State Voter Photo ID Requirement:** The voter law dataset includes explanation of the id requirements for absentee voting, early voting, and day of voting as separate requirements. The requirements fell into one of 3-5 categories: government photo ID, non-government photo ID, other ID, notary, or signature match. We collated this data into a single variable where each state could be identified as having a ‘photo ID requirement’ or not. If any of the voting scenarios required a photo ID, then the state was labeled as having a Photo ID requirement.  
+
+We did not account for actual voting method as this study was investigating the effect of photo ID law on intent to vote. If we were studying how voter ID law affects actual voting, we would have looked at each voting method separately because in some states photo ID is required only in early or absentee voting and in other states photo ID might only be required for day of (in person) voting.
 
 
 ```{r}
@@ -32,6 +61,8 @@ anes16_with_laws <- read.csv(path2)
 path3 <- here("data", "anes_voting_law_data_with_pol_variables.csv")
 anes16_new <- read.csv(path3)
 
+path4 <- here("data", "anes_timeseries_2016.dta")
+anes_OG <- read_dta(path4)
 ```
 
 
@@ -39,7 +70,12 @@ anes16_new <- read.csv(path3)
 ```{r}
 #combining datasets
 anes <- cbind(anes16_new, intent_vote = anes16_with_laws$V161030,
-              intent_vote_reg = anes16_with_laws$V161024x)
+              intent_vote_reg = anes16_with_laws$V161024x,
+              age_grp = anes16_with_laws$V161267x,
+             voted16 =  anes_OG$V161026,
+             live_comm = anes_OG$V161331x,
+             race_new = anes_OG$V161310x,
+             income = anes_OG$V161361x)
 
 
 #renaming variables
@@ -54,7 +90,6 @@ anes <- rename(anes, id_law = Check..Photo.ID.vs..No.Photo,
                therm_rep = V161087...FT.Rep.Cand,
                party_strength = V161156...Strong.Party.Affiliation,
                race = V161310....calc..Race...All,
-               income = V161361x...Pre.Income,
                gender = V165723...Gender,
                age = V168254..Age..observed.)
 
@@ -65,48 +100,28 @@ anes <- rename(anes, id_law = Check..Photo.ID.vs..No.Photo,
 anes$alt_party <- recode(anes$alt_party,
                          'Alternate Party' = 1,
                          'Primary Party' = 0)
-
+# alternative party as factor
+anes$alt_party <- factor(anes$alt_party)
 
 # 1 = Democratic, 0 = Republican
 anes$pol_lean <- recode(anes$pol_lean, 
                         "Democratic" = 1,
                         "Republican" = 0)
-
+anes$pol_lean <- factor(anes$pol_lean)
 
 # 1 = Under Poverty Line, 0 = Over Poverty Line
 anes$poverty <- recode(anes$poverty,
                        "Under Poverty Line" = 1,
                        "Over Poverty Line" = 0)
+# poverty as factor
+anes$poverty <- factor(anes$poverty)
 
 # NA = -1: Missing
 anes$party_reg <- na_if(anes$party_reg, "-1:Missing")
+anes$race_new <- na_if(anes$race_new, -2)
 
 
-
-# 0 = American Indian/Alaskan Native
-# 1 = Asian
-# 2 = Black/African American
-# 3 = Native Hawaiin/Pacific Islander
-# 4 = Other Race
-# 5 = White
-anes$race <- recode(anes$race, 
-                    "American Indian/Alaskan Native" = 0,
-                   "Asian" = 1,
-                    "Black/African American" = 2,
-                    "Native Hawaiin/Pacific Islander" = 3,
-                    "Other Race" = 4,
-                    "White" = 5
-                    )
-
-
-# 1 = 1:Male, 0 = 2:Female
-anes$gender <- recode(anes$gender,
-                      "1: Male" = 1,
-                      "2: Female" = 0)
-
-anes$age <- na_if(anes$age, 
-                  "-1:Missing")
-
+# ID law as factor
 anes$id_law <- factor(anes$id_law)
 
 # recoding the DV, Counting R's that are not registered to vote/ does not intend to register as a NO(2) for intent_vote
@@ -115,28 +130,119 @@ anes$intent_vote[anes$intent_vote_reg == 1] <-  0
 # recoding the DV, Counting R's that registered and voted early as a YES(1) for intent_vote
 anes$intent_vote[anes$intent_vote_reg == 4] <-  1 
 
+
+# recoding the NO to a 0
 anes$intent_vote <- recode(anes$intent_vote, "2" = 0)
 
+
+# setting the Don't Knows/ Refuse to NA's
 anes$intent_vote <- na_if(anes$intent_vote, "-8")
 anes$intent_vote <- na_if(anes$intent_vote, "-9")
-anes_noNA <- na.omit(anes)
 
+# recoding the id laws: 1 = No Photo ID Req, 2 = Gov Photo ID Req, 3 = Any Photo ID Req
+anes$id_law <- recode(anes$id_law,
+                      "No Photo ID Req" = 1,
+                      "Gov Photo ID Req" = 2,
+                      "Any Photo ID Req" = 3)
+
+# race as factor
+anes$race_new <- factor(anes$race_new)
+
+# party_reg: 1 = 1: Democratic, 2 = 2: Republican, 3 = 4: None or Independent, 4 = 5: Other
+# anes$party_reg <- recode(anes$party_reg,
+                        # "1: Democratic" = 1,
+                        # "2: Republican" = 2,
+                        # "4: None or Independent" = 3,
+                        # "5: Other" = 4)
+# anes$party_reg <- factor(anes$party_reg)
+
+# dropping all variables not needed
+anes <- anes %>% select(-party_reg, -gender, -race, -pol_lean, -party_strength, -voted16)
+
+# removing NAs from the data
+anes_noNA <- na.omit(anes)
 ```
 
 
 
 
 ```{r}
-glm_new <- glm(intent_vote ~ id_law + pol_lean + alt_party + poverty,  family = "binomial", data = anes_noNA) 
+# binomial logistic model fit with ID law and minority party interaction
+glm_new <- glm(intent_vote ~ id_law * alt_party + race_new + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
 
+# binomial logistic model fit with no interaction
+glm_new1 <- glm(intent_vote ~ id_law + alt_party + race_new + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
 
-summary(glm_new)
-
-xtabs(~intent_vote + id_law, data = anes)
-
-ggplot(anes, aes(id_law, intent_vote, color = alt_party)) +
-  geom_jitter()
+# binomial logistic model fit ID law and race interaction
+glm_new2 <- glm(intent_vote ~ id_law + alt_party + id_law * race_new + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
 ```
-for every one unit change in 
+
+```{r}
+# summary table results
+summary(glm_new1)
+```
+
+```{r}
+# final regression results
+export_summs(glm_new)
+
+# CI's
+confint.default(glm_new)
+```
+
+```{r}
+summary(glm_new2)
+```
+
+
+
+
+
+```{r}
+
+# xtab of 0/1 vote and ID law
+xtabs(~intent_vote + id_law, data = anes_noNA)
+
+
+# fitted values across race
+ggplot(anes_noNA, aes(race_new, glm_new$fitted.values, color = intent_vote)) +
+  geom_point()
+
+
+write.csv(anes_noNA, 'anes_new.csv')
+
+```
+
+
+
+```{r}
+# predicting minority 
+p_GAminority <- predict.glm(glm_new, interval = "confidence",
+                  anes_noNA,
+                  se = T,
+                  alt_party = 1,
+                  state = "GA",
+                  race_new = 2)
+
+# predicting majority
+p_GAmajority <- predict.glm(glm_new, interval = "confidence",
+                            anes_noNA,
+                            se = T,
+                            alt_party = 0,
+                            state = "GA",
+                            race_new = 1)
+
+
+
+# plotting predicted GA minority values along actual fitted values
+ggplot(anes_noNA, mapping = aes(glm_new$fitted.values, p_GAminority$fit)) +
+  geom_count(aes(glm_new$fitted.values, p_GAminority$fit), color = "lightblue") + 
+  geom_smooth(aes(glm_new$fitted.values, p_GAminority$fit), method = "glm", color = "lightgrey") +
+  labs(x = "Actual Intent to Vote", y = "Predicted for GA Minority Party", title = "Predicted Intent to Vote for Democrat in Georgia")
+ 
+             
+```
+
+
 
 
