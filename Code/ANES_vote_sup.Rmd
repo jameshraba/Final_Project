@@ -19,9 +19,12 @@ library(here)
 library(haven)
 library(ggplot2)
 library(jtools)
+library(kableExtra)
 library(huxtable)
 library(sandwich)
 library(flextable)
+library(ggstance)
+library(stargazer)
 ```
 
 
@@ -75,7 +78,8 @@ anes <- cbind(anes16_new, intent_vote = anes16_with_laws$V161030,
              voted16 =  anes_OG$V161026,
              live_comm = anes_OG$V161331x,
              race_new = anes_OG$V161310x,
-             income = anes_OG$V161361x)
+             income = anes_OG$V161361x,
+             education = anes_OG$V161270)
 
 
 #renaming variables
@@ -121,6 +125,11 @@ anes$party_reg <- na_if(anes$party_reg, "-1:Missing")
 anes$race_new <- na_if(anes$race_new, -2)
 
 
+anes$gender <- recode(anes$gender,
+                      "1: Male" = 0,
+                      "2: Female" = 1)
+anes$gender <- na_if(anes$gender, "-2: Missing")
+
 # ID law as factor
 anes$id_law <- factor(anes$id_law)
 
@@ -139,12 +148,24 @@ anes$intent_vote <- recode(anes$intent_vote, "2" = 0)
 anes$intent_vote <- na_if(anes$intent_vote, "-8")
 anes$intent_vote <- na_if(anes$intent_vote, "-9")
 
-# recoding the id laws: 1 = No Photo ID Req, 2 = Gov Photo ID Req, 3 = Any Photo ID Req
-anes$id_law <- recode(anes$id_law,
-                      "No Photo ID Req" = 1,
-                      "Gov Photo ID Req" = 2,
-                      "Any Photo ID Req" = 3)
+anes$id_lawW <- ifelse(anes$id_law == "No Photo ID Req", 0, 1)
 
+#subset(anes, select = c(id_law,id_lawW)) %>% View()
+
+# recoding the id laws: 1 = No Photo ID Req, 2 = Gov Photo ID Req, 3 = Any Photo ID Req
+#anes$id_law <- recode(anes$id_law,
+                   #   "No Photo ID Req" = 1,
+                    #  "Gov Photo ID Req" = 2,
+                   #   "Any Photo ID Req" = 3)
+
+
+
+
+
+    
+
+
+anes$id_law <- factor(anes$id_law)
 # race as factor
 anes$race_new <- factor(anes$race_new)
 
@@ -157,7 +178,7 @@ anes$race_new <- factor(anes$race_new)
 # anes$party_reg <- factor(anes$party_reg)
 
 # dropping all variables not needed
-anes <- anes %>% select(-party_reg, -gender, -race, -pol_lean, -party_strength, -voted16)
+anes <- anes %>% select(-party_reg, -race, -pol_lean, -party_strength, -voted16)
 
 # removing NAs from the data
 anes_noNA <- na.omit(anes)
@@ -168,13 +189,18 @@ anes_noNA <- na.omit(anes)
 
 ```{r}
 # binomial logistic model fit with ID law and minority party interaction
-glm_new <- glm(intent_vote ~ id_law * alt_party + race_new + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
+glm_new <- glm(intent_vote ~ id_law * alt_party + race_new + education + gender + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
 
 # binomial logistic model fit with no interaction
-glm_new1 <- glm(intent_vote ~ id_law + alt_party + race_new + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
+glm_new1 <- glm(intent_vote ~ id_lawW + alt_party + education + gender + race_new + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
 
 # binomial logistic model fit ID law and race interaction
-glm_new2 <- glm(intent_vote ~ id_law + alt_party + id_law * race_new + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
+glm_new2 <- glm(intent_vote ~ id_law + alt_party + id_law * race_new + education + gender + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
+
+
+glm_new4 <- glm(intent_vote ~ id_law : state + race_new + education + gender + age_grp + live_comm + alt_party, family = "binomial"(link = logit), data = anes_noNA)
+
+summary(glm_new4)
 ```
 
 ```{r}
@@ -192,8 +218,22 @@ confint.default(glm_new)
 
 ```{r}
 summary(glm_new2)
+
+glm_new <- glm(intent_vote ~ id_lawW * alt_party + race_new + education + gender + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
+
+
+glm_new_no_bin <- glm(intent_vote ~ id_law * alt_party + race_new + education + gender + poverty + age_grp + live_comm,  family = "binomial"(link = logit), data = anes_noNA)
+
+summary(glm_new)
 ```
 
+```{r}
+summary(glm_new)
+summary(glm_new_no_bin)
+
+summary(glm_new1)
+
+```
 
 
 
@@ -201,7 +241,12 @@ summary(glm_new2)
 ```{r}
 
 # xtab of 0/1 vote and ID law
-xtabs(~intent_vote + id_law, data = anes_noNA)
+#xtable(~id_law + state, data = anes_noNA)
+
+
+anes_noNA %>% count(id_lawW, state)
+
+
 
 
 # fitted values across race
@@ -209,8 +254,15 @@ ggplot(anes_noNA, aes(race_new, glm_new$fitted.values, color = intent_vote)) +
   geom_point()
 
 
-write.csv(anes_noNA, 'anes_new.csv')
+#write.csv(anes_noNA, 'anes_new.csv')
 
+
+
+library(coefplot)
+coefplot::coefplot(glm_new)
+
+plot(glm_new$coefficients)
+plot(glm_new$fitted.values)
 ```
 
 
@@ -243,6 +295,16 @@ ggplot(anes_noNA, mapping = aes(glm_new$fitted.values, p_GAminority$fit)) +
              
 ```
 
+```{r}
+summ(glm_new)
+```
 
+```{r}
+summ(glm_new_no_bin)
+```
 
+```{r}
+
+plot_coefs(glm_new, glm_new_no_bin, glm_new1)
+```
 
